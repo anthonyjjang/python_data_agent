@@ -525,10 +525,43 @@ def test_logging():
 def main():
     st.title("내 엑셀데이터와 대화하기")
     
-    # 페이지 로드 시 로깅 테스트
+    # 페이지 로드 시 로깅 테스트 및 환경 확인
     if 'logging_tested' not in st.session_state:
         st.session_state.logging_tested = True
         test_logging()
+        
+        # OpenAI API 키 상태 로깅
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            openai_key = openai_key.strip()
+            logging.info("=" * 60)
+            logging.info("🔑 OpenAI API 키 확인")
+            logging.info("=" * 60)
+            logging.info(f"✅ API 키 존재: 예")
+            logging.info(f"📏 API 키 길이: {len(openai_key)} 문자")
+            logging.info(f"🔤 API 키 시작: {openai_key[:10]}...")
+            logging.info(f"🔤 API 키 끝: ...{openai_key[-4:]}")
+            
+            # API 키 형식 검증
+            if openai_key.startswith('sk-'):
+                logging.info("✅ API 키 형식: 올바름 (sk-로 시작)")
+            else:
+                logging.warning("⚠️ API 키 형식: 의심스러움 (sk-로 시작하지 않음)")
+            
+            # 공백이나 특수문자 확인
+            if ' ' in openai_key:
+                logging.warning("⚠️ API 키에 공백이 포함되어 있습니다!")
+            if '\n' in openai_key or '\r' in openai_key:
+                logging.warning("⚠️ API 키에 줄바꿈 문자가 포함되어 있습니다!")
+            
+            logging.info("=" * 60)
+        else:
+            logging.warning("=" * 60)
+            logging.warning("⚠️ OpenAI API 키 확인")
+            logging.warning("=" * 60)
+            logging.warning("❌ API 키 존재: 아니오")
+            logging.warning("💡 .env 파일에 OPENAI_API_KEY를 설정해주세요")
+            logging.warning("=" * 60)
     
     # 사이드바에 모델 선택 옵션 추가
     with st.sidebar:
@@ -536,7 +569,8 @@ def main():
         
         # LLM 서비스 상태 확인
         ollama_available = check_ollama_connection()
-        openai_available = bool(os.getenv("OPENAI_API_KEY"))
+        openai_key = os.getenv("OPENAI_API_KEY")
+        openai_available = bool(openai_key and openai_key.strip())
         
         # 사용 가능한 서비스 옵션 생성
         service_options = []
@@ -630,41 +664,65 @@ def main():
     # 파일 업로드
     uploaded_file = st.file_uploader("파일 업로드", type=["xls", "xlsx", "csv"])
     if uploaded_file:
+        logging.info("=" * 60)
+        logging.info("📁 파일 업로드 시작")
+        logging.info("=" * 60)
+        logging.info(f"📄 파일명: {uploaded_file.name}")
+        logging.info(f"📦 파일 크기: {uploaded_file.size:,} bytes")
+        
         file_type = uploaded_file.name.split('.')[-1].lower()
+        logging.info(f"📝 파일 타입: {file_type}")
         
         if file_type == 'csv':
             # CSV 파일 인코딩 자동 감지 및 처리
+            logging.info("🔍 CSV 파일 인코딩 감지 시작...")
             try:
                 df = pd.read_csv(uploaded_file, encoding='utf-8')
                 logging.info("✅ CSV 파일을 UTF-8로 성공적으로 로드했습니다.")
-            except UnicodeDecodeError:
+            except UnicodeDecodeError as e:
+                logging.warning(f"⚠️ UTF-8 인코딩 실패: {str(e)}")
                 try:
                     # 한국어 CSV 파일의 경우 EUC-KR 또는 CP949 시도
                     uploaded_file.seek(0)  # 파일 포인터 리셋
                     df = pd.read_csv(uploaded_file, encoding='euc-kr')
                     logging.info("✅ CSV 파일을 EUC-KR로 성공적으로 로드했습니다.")
-                except UnicodeDecodeError:
+                except UnicodeDecodeError as e:
+                    logging.warning(f"⚠️ EUC-KR 인코딩 실패: {str(e)}")
                     try:
                         uploaded_file.seek(0)  # 파일 포인터 리셋
                         df = pd.read_csv(uploaded_file, encoding='cp949')
                         logging.info("✅ CSV 파일을 CP949로 성공적으로 로드했습니다.")
-                    except UnicodeDecodeError:
+                    except UnicodeDecodeError as e:
+                        logging.warning(f"⚠️ CP949 인코딩 실패: {str(e)}")
                         try:
                             uploaded_file.seek(0)  # 파일 포인터 리셋
                             df = pd.read_csv(uploaded_file, encoding='latin1')
                             logging.info("✅ CSV 파일을 Latin1로 성공적으로 로드했습니다.")
                         except Exception as e:
+                            logging.error(f"❌ 모든 인코딩 시도 실패: {str(e)}")
+                            logging.error(f"📋 상세 오류: {traceback.format_exc()}")
                             st.error(f"❌ CSV 파일 인코딩을 인식할 수 없습니다: {str(e)}")
                             st.info("💡 해결 방법: CSV 파일을 UTF-8 인코딩으로 저장해주세요.")
                             return
         else:
+            logging.info("🔍 Excel 파일 로드 시작...")
             try:
                 df = pd.read_excel(uploaded_file)
                 logging.info("✅ Excel 파일을 성공적으로 로드했습니다.")
             except Exception as e:
+                logging.error(f"❌ Excel 파일 로드 실패: {str(e)}")
+                logging.error(f"📋 상세 오류: {traceback.format_exc()}")
                 st.error(f"❌ Excel 파일을 읽을 수 없습니다: {str(e)}")
                 st.info("💡 해결 방법: 파일이 손상되지 않았는지 확인해주세요.")
                 return
+
+        # 데이터프레임 정보 로깅
+        logging.info("📊 데이터프레임 정보:")
+        logging.info(f"  - 행 수: {len(df):,}")
+        logging.info(f"  - 열 수: {len(df.columns)}")
+        logging.info(f"  - 컬럼: {list(df.columns)[:10]}{'...' if len(df.columns) > 10 else ''}")
+        logging.info(f"  - 메모리 사용량: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        logging.info("=" * 60)
 
         # 파일 정보 표시
         st.success(f"✅ 파일 업로드 성공: {uploaded_file.name}")
@@ -706,23 +764,37 @@ def main():
             st.session_state["user_query"] = user_query
             if user_query:
                 try:
-                    logging.info(f"🚀 질문 처리 시작: {user_query}")
+                    logging.info("=" * 60)
+                    logging.info("💬 질문 처리 시작")
+                    logging.info("=" * 60)
+                    logging.info(f"❓ 사용자 질문: {user_query}")
+                    logging.info(f"📊 데이터 크기: {len(df)}행 × {len(df.columns)}열")
+                    
+                    # LLM 서비스 확인
+                    service = st.session_state.get('llm_service', 'openai')
+                    model = st.session_state.get('selected_model', 'gpt-4o-mini')
+                    logging.info(f"🤖 사용할 서비스: {service}")
+                    logging.info(f"🤖 사용할 모델: {model}")
                     
                     # 1단계: 코드 생성 프롬프트 생성
                     logging.info("📋 1단계: 코드 생성 프롬프트 생성 중...")
                     code_prompt = generate_code_prompt(user_query, df_preview, df_types)
+                    logging.info(f"📏 프롬프트 길이: {len(code_prompt)} 문자")
                     print("생성된 코드 프롬프트")
                     print(code_prompt)
                     
                     # 2단계: LLM 호출로 코드 생성
                     logging.info("🤖 2단계: LLM 호출로 코드 생성 중...")
+                    logging.info(f"📡 API 호출 준비 중... (서비스: {service}, 모델: {model})")
                     generated_response = llm_call(code_prompt)
+                    logging.info(f"✅ LLM 응답 수신 완료 (길이: {len(generated_response)} 문자)")
                     print("생성된 코드")
                     print(generated_response)   
                     
                     # 3단계: 코드 추출
                     logging.info("🔍 3단계: 생성된 응답에서 코드 추출 중...")
                     generated_code = extract_code_from_response(generated_response)
+                    logging.info(f"📝 추출된 코드 길이: {len(generated_code) if generated_code else 0} 문자")
                     print("생성된 코드 추출")
                     print(generated_code)
                     
@@ -758,9 +830,46 @@ def main():
                         st.error(f"코드 실행 중 오류가 발생했습니다: {filtered_df}")
                         
                 except Exception as e:
-                    logging.error(f"💥 전체 프로세스 오류: {str(e)}")
-                    logging.error(f"📋 상세 오류: {traceback.format_exc()}")
-                    st.error(f"처리 중 오류가 발생했습니다: {str(e)}")
+                    logging.error("=" * 60)
+                    logging.error("💥 전체 프로세스 오류 발생")
+                    logging.error("=" * 60)
+                    logging.error(f"❌ 오류 유형: {type(e).__name__}")
+                    logging.error(f"❌ 오류 메시지: {str(e)}")
+                    logging.error(f"📋 상세 스택 트레이스:")
+                    logging.error(traceback.format_exc())
+                    
+                    # 오류 유형별 상세 분석
+                    error_str = str(e).lower()
+                    if '400' in error_str or 'bad request' in error_str:
+                        logging.error("🚨 AxiosError 400 감지!")
+                        logging.error("📌 가능한 원인:")
+                        logging.error("  1. 잘못된 모델명 (gpt-4o-mini는 존재하지 않을 수 있음)")
+                        logging.error("  2. API 키 형식 오류")
+                        logging.error("  3. 프롬프트 형식 문제")
+                        logging.error("  4. 요청 페이로드 문제")
+                        
+                        # 현재 설정 확인
+                        service = st.session_state.get('llm_service', '미설정')
+                        model = st.session_state.get('selected_model', '미설정')
+                        logging.error(f"📊 현재 설정: 서비스={service}, 모델={model}")
+                        
+                        st.error(f"❌ API 요청 오류 (400 Bad Request): {str(e)}")
+                        st.warning("⚠️ 가능한 해결 방법:")
+                        st.info("1. 다른 모델을 선택해보세요 (예: gpt-3.5-turbo)")
+                        st.info("2. .env 파일의 OPENAI_API_KEY를 확인해보세요")
+                        st.info("3. Ollama를 사용해보세요 (무료)")
+                    elif '401' in error_str or 'unauthorized' in error_str:
+                        logging.error("🚨 인증 오류 (401) 감지!")
+                        st.error(f"❌ API 키 인증 오류: {str(e)}")
+                        st.info("💡 .env 파일의 OPENAI_API_KEY를 확인해주세요")
+                    elif '429' in error_str or 'rate limit' in error_str:
+                        logging.error("🚨 요청 한도 초과 (429) 감지!")
+                        st.error(f"❌ API 요청 한도 초과: {str(e)}")
+                        st.info("💡 잠시 후 다시 시도하거나 Ollama를 사용해주세요")
+                    else:
+                        st.error(f"❌ 처리 중 오류가 발생했습니다: {str(e)}")
+                    
+                    logging.error("=" * 60)
                     
             else:
                 st.warning("질문을 입력해주세요.")
