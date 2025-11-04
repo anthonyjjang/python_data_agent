@@ -570,18 +570,111 @@ def main():
         # LLM 서비스 상태 확인
         ollama_available = check_ollama_connection()
         openai_key = os.getenv("OPENAI_API_KEY")
-        openai_available = bool(openai_key and openai_key.strip())
+        if openai_key:
+            openai_key = openai_key.strip()
+        openai_available = bool(openai_key and len(openai_key) > 0)
         
-        # 사용 가능한 서비스 옵션 생성
-        service_options = []
-        if ollama_available:
-            service_options.append("🦙 Ollama (로컬)")
+        # API 키 상태 표시
+        st.write("---")
+        st.write("**🔑 API 키 상태**")
         if openai_available:
-            service_options.append("🤖 OpenAI (클라우드)")
+            # API 키가 있는 경우
+            st.success(f"✅ OpenAI API 키: 설정됨")
+            with st.expander("🔍 API 키 정보"):
+                st.code(f"키 길이: {len(openai_key)} 문자")
+                st.code(f"시작: {openai_key[:10]}...")
+                st.code(f"끝: ...{openai_key[-4:]}")
+                
+                # 키 형식 검증
+                if openai_key.startswith('sk-'):
+                    st.success("✅ 형식: 올바름 (sk-로 시작)")
+                else:
+                    st.warning("⚠️ 형식: 의심스러움 (sk-로 시작하지 않음)")
+                
+                # 문제 감지
+                issues = []
+                if ' ' in openai_key:
+                    issues.append("공백 포함")
+                if '\n' in openai_key or '\r' in openai_key:
+                    issues.append("줄바꿈 포함")
+                
+                if issues:
+                    st.warning(f"⚠️ 문제 감지: {', '.join(issues)}")
+                else:
+                    st.success("✅ 문제 없음")
+        else:
+            # API 키가 없는 경우
+            st.warning("⚠️ OpenAI API 키: 미설정")
+            st.info("💡 .env 파일에 OPENAI_API_KEY를 추가하세요")
+            
+            # API 키 설정 가이드
+            with st.expander("📝 API 키 설정 방법"):
+                st.markdown("""
+                **1. OpenAI API 키 발급**
+                - https://platform.openai.com/api-keys
+                - 계정 생성 및 로그인
+                - "Create new secret key" 클릭
+                
+                **2. .env 파일 생성**
+                ```bash
+                # 프로젝트 루트에 .env 파일 생성
+                cd /Users/loveauden/Development/vibe_pandas_project
+                echo "OPENAI_API_KEY=your-api-key-here" > .env
+                ```
+                
+                **3. Streamlit 재시작**
+                - Ctrl+C로 종료 후 다시 실행
+                """)
+        
+        # Ollama 상태 표시
+        st.write("---")
+        st.write("**🦙 Ollama 상태**")
+        if ollama_available:
+            st.success("✅ Ollama: 사용 가능")
+        else:
+            st.warning("⚠️ Ollama: 사용 불가")
+            with st.expander("📝 Ollama 설치 방법"):
+                st.markdown("""
+                **1. Ollama 설치**
+                ```bash
+                brew install ollama
+                ```
+                
+                **2. 모델 다운로드**
+                ```bash
+                ollama pull qwen2.5:3b
+                ```
+                
+                **3. Ollama 서버 시작**
+                ```bash
+                ollama serve
+                ```
+                """)
+        
+        st.write("---")
+        
+        # 사용 가능한 서비스 옵션 생성 (우선순위: Ollama > OpenAI)
+        service_options = []
+        default_service = None
+        
+        # API 키가 없으면 Ollama를 우선으로
+        if not openai_available and ollama_available:
+            service_options.append("🦙 Ollama (로컬)")
+            default_service = "ollama"
+            st.info("💡 OpenAI API 키가 없어 Ollama를 사용합니다")
+            logging.info("🦙 OpenAI API 키 없음 - Ollama로 자동 전환")
+        else:
+            # 두 서비스 모두 사용 가능한 경우
+            if ollama_available:
+                service_options.append("🦙 Ollama (로컬)")
+            if openai_available:
+                service_options.append("🤖 OpenAI (클라우드)")
         
         if not service_options:
             st.error("❌ 사용 가능한 LLM 서비스가 없습니다!")
-            st.info("Ollama를 설치하거나 OpenAI API 키를 설정해주세요.")
+            st.warning("⚠️ 다음 중 하나를 설정해주세요:")
+            st.info("1. Ollama 설치 및 실행 (무료)")
+            st.info("2. OpenAI API 키 설정 (유료)")
             return
         
         # LLM 서비스 선택
@@ -609,25 +702,40 @@ def main():
                 st.session_state.llm_service = "ollama"
                 st.session_state.selected_model = selected_model
             else:
-                st.error("설치된 Ollama 모델이 없습니다.")
-                st.code("ollama pull qwen2.5:3b")
+                st.error("❌ 설치된 Ollama 모델이 없습니다.")
+                st.info("💡 다음 명령으로 모델을 다운로드하세요:")
+                st.code("ollama pull qwen2.5:3b", language="bash")
+                st.info("또는 다른 모델:")
+                st.code("ollama pull llama3.2:3b\nollama pull qwen2.5:7b", language="bash")
+                return
                 
         elif "OpenAI" in selected_service and openai_available:
             openai_models = [
-                "gpt-4o-mini",
-                "gpt-4o", 
-                "gpt-4-turbo",
-                "gpt-3.5-turbo"
+                "gpt-3.5-turbo",      # 가장 저렴하고 빠름
+                "gpt-4-turbo",        # GPT-4의 빠른 버전
+                "gpt-4",              # 가장 강력
+                "gpt-4o",             # 최신 모델 (존재 시)
             ]
             
             selected_model = st.selectbox(
                 "OpenAI 모델 선택:",
                 openai_models,
-                index=0
+                index=0,
+                help="gpt-3.5-turbo를 권장합니다 (빠르고 저렴)"
             )
             
+            # 모델별 정보 표시
+            model_info = {
+                "gpt-3.5-turbo": "💰 저렴 | ⚡ 빠름 | 👍 권장",
+                "gpt-4-turbo": "💰💰 보통 | ⚡ 빠름 | 🎯 정확",
+                "gpt-4": "💰💰💰 비쌈 | 🐢 느림 | 🎯🎯 매우 정확",
+                "gpt-4o": "💰💰 보통 | ⚡⚡ 매우 빠름 | 🆕 최신"
+            }
+            
             st.info(f"선택된 모델: {selected_model}")
-            st.warning("⚠️ OpenAI 사용 시 요금이 발생할 수 있습니다.")
+            if selected_model in model_info:
+                st.info(f"특징: {model_info[selected_model]}")
+            st.warning("⚠️ OpenAI 사용 시 요금이 발생합니다")
             
             # 세션 상태에 저장
             st.session_state.llm_service = "openai"
