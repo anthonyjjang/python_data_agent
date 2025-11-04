@@ -378,48 +378,82 @@ def detect_file_encoding(uploaded_file):
         logging.warning(f"⚠️ 인코딩 감지 실패: {e}")
         return None
 
+#######################  헬퍼 함수 : DataFrame을 텍스트 테이블로 변환 ########################
+
+def df_to_text_table(df_preview: list, df_types: dict) -> tuple:
+    """
+    DataFrame 미리보기를 읽기 쉬운 텍스트 테이블로 변환
+    
+    Args:
+        df_preview: DataFrame의 dict 형태 미리보기 (리스트)
+        df_types: 각 컬럼의 데이터 타입 딕셔너리
+        
+    Returns:
+        (type_text, preview_text): 타입 정보와 미리보기 텍스트
+    """
+    columns = list(df_types.keys())
+    
+    # 데이터 타입 텍스트
+    type_lines = ["데이터 컬럼 정보:"]
+    for col, dtype in df_types.items():
+        type_lines.append(f"  - {col}: {dtype}")
+    type_text = "\n".join(type_lines)
+    
+    # 데이터 미리보기 텍스트
+    preview_lines = ["\n데이터 샘플 (처음 5행):"]
+    if df_preview:
+        # 헤더
+        header = " | ".join(str(col) for col in columns)
+        preview_lines.append("  " + header)
+        preview_lines.append("  " + "-" * min(len(header), 100))
+        
+        # 데이터 행
+        for row in df_preview:
+            values = [str(row.get(col, ""))[:30] for col in columns]  # 각 값 최대 30자
+            preview_lines.append("  " + " | ".join(values))
+    
+    preview_text = "\n".join(preview_lines)
+    
+    return type_text, preview_text
+
+
 #######################  1단계 : code 생성 ########################
 def generate_code_prompt(user_query: str, df_preview: dict, df_types: dict) -> str:
-    print("📌 df 타입정보")
-    print(json.dumps(df_types, ensure_ascii=False, indent=2))
-
-    # dict → pretty JSON string
-    preview_str = json.dumps(df_preview, ensure_ascii=False, indent=2)
-    types_str = json.dumps(df_types, ensure_ascii=False, indent=2)
-    prompt = f"""
-    다음은 pandas DataFrame(df)의 미리보기입니다:
-    {preview_str}
-
-    각 컬럼의 데이터 타입은 다음과 같습니다:
-    {types_str}
-
-    다음 사용자 질의에 기반하여 관련 정보를 추출하는 Python 코드를 생성하세요:
-    "{user_query}"
-
-    코드는 `df`가 이미 로드되어 있다고 가정하고, 최종 결과는 새로운 DataFrame `final_df`로 반환되어야 합니다.
-
-    단, 사용자 질의가 단일 값을 묻는 질문(예: 최대값, 최소값, 상위 1개 등)이라 하더라도,
-    `final_df`에는 관련된 전체 맥락이 담겨야 합니다.
-    예를 들어, "가장 층이 높은 행정구는?"이라는 질문이라면,
-    해당 컬럼을 기준으로 정렬된 모든 행정구 정보를 포함한 DataFrame을 반환해야 합니다.
-
-    즉, 단일 값만 추출하지 말고, 사용자의 질문에 대한 비교/정렬/비율 등의 추가적이고 관련 있는 정보를 함께 포함하세요.
-
-    **중요한 요구사항:**
-    1. 생성된 코드는 반드시 <result></result> XML 태그 안에 작성해주세요.
-    2. import문이나 print문은 포함하지 마세요.
-    3. 코드는 반드시 `final_df = ...` 형태로 끝나야 합니다.
-    4. <think> 태그나 설명은 사용하지 마세요. 오직 실행 가능한 Python 코드만 작성하세요.
-
-    ## 응답 예시
-    <result>
-    sorted_df = df.groupby("행정구")["층수"].max().reset_index()
-    sorted_df = sorted_df.sort_values(by="층수", ascending=False)
-    final_df = sorted_df
-    </result>
-    
-    ## 현재 질문에 대한 코드만 <result> 태그 안에 작성해주세요.
     """
+    사용자 질문에 대한 코드 생성 프롬프트를 텍스트 형식으로 생성
+    """
+    # JSON 대신 텍스트 테이블로 변환
+    type_text, preview_text = df_to_text_table(df_preview, df_types)
+    
+    prompt = f"""다음은 pandas DataFrame(df)에 대한 정보입니다:
+
+{type_text}
+
+{preview_text}
+
+사용자 질문: "{user_query}"
+
+위 데이터를 바탕으로 사용자 질문에 답하기 위한 Python 코드를 생성하세요.
+
+요구사항:
+1. df는 이미 로드되어 있다고 가정
+2. 최종 결과는 final_df라는 DataFrame으로 반환
+3. 단일 값이 아닌 관련된 전체 맥락 포함 (정렬, 비교, 비율 등)
+   - 예: "가장 높은 층수는?" → 모든 행정구를 층수로 정렬한 DataFrame 반환
+4. 생성된 코드는 반드시 <result></result> XML 태그 안에 작성
+5. import문이나 print문은 포함하지 않음
+6. 코드는 반드시 final_df = ... 형태로 끝남
+7. <think> 태그나 설명 없이 실행 가능한 Python 코드만 작성
+
+응답 예시:
+<result>
+sorted_df = df.groupby("행정구")["층수"].max().reset_index()
+sorted_df = sorted_df.sort_values(by="층수", ascending=False)
+final_df = sorted_df
+</result>
+
+현재 질문에 대한 코드만 <result> 태그 안에 작성해주세요.
+"""
     return prompt
 
 #######################  2단계 : code 추출 및 실행 ########################
@@ -620,18 +654,52 @@ def execute_generated_code(code: str, df: pd.DataFrame, max_retries: int = 3):
 
 
 def generate_final_prompt(user_query: str, filtered_df: pd.DataFrame) -> str:
-    try:
-        filtered_json = json.dumps(json.loads(filtered_df.to_json()), ensure_ascii=False)
-    except Exception as e:
-        filtered_json = "{}"  # fallback in case of an error
+    """
+    필터링된 데이터를 일반 텍스트 형태로 변환하여 최종 답변 생성 프롬프트 작성
+    """
+    # DataFrame을 읽기 쉬운 텍스트로 변환
+    data_text_lines = [f"분석 결과 데이터 (총 {len(filtered_df)}개 행):"]
+    data_text_lines.append("")
     
-    context_json = json.dumps({"query": user_query, "data": filtered_json}, ensure_ascii=False)
-    prompt = f"""
-    다음 컨텍스트가 주어졌습니다:
-    {context_json}
-    주어진 데이터를 기반으로 질문에 대한 답변을 제공해주세요. 답변은 명확하고 간결해야 하며, 불필요한 포맷팅이나 인코딩 문제가 없어야 합니다.
-    - 답변은 한국어로 작성해주세요.
-        """
+    # 데이터가 적으면 전체 표시, 많으면 상위 10개만
+    display_df = filtered_df.head(10) if len(filtered_df) > 10 else filtered_df
+    
+    if len(display_df) > 0:
+        # 컬럼명
+        columns = list(display_df.columns)
+        max_col_width = 20  # 각 컬럼 최대 너비
+        
+        # 헤더
+        header = " | ".join(str(col)[:max_col_width] for col in columns)
+        data_text_lines.append(header)
+        data_text_lines.append("-" * min(len(header), 100))
+        
+        # 데이터 행
+        for idx, row in display_df.iterrows():
+            values = [str(row[col])[:max_col_width] for col in columns]
+            data_text_lines.append(" | ".join(values))
+        
+        if len(filtered_df) > 10:
+            data_text_lines.append(f"\n... (총 {len(filtered_df)}개 행 중 상위 10개만 표시)")
+    else:
+        data_text_lines.append("(데이터 없음)")
+    
+    data_text = "\n".join(data_text_lines)
+    
+    prompt = f"""다음은 사용자 질문에 대한 데이터 분석 결과입니다:
+
+사용자 질문: {user_query}
+
+{data_text}
+
+위 데이터를 바탕으로 질문에 대한 명확하고 간결한 답변을 한국어로 작성해주세요.
+
+답변 작성 가이드:
+- 핵심 정보를 먼저 제시
+- 데이터에서 확인된 구체적인 수치나 사실 포함
+- 필요시 추가 인사이트나 비교 정보 제공
+- 자연스러운 문장으로 작성 (불필요한 포맷팅 없이)
+"""
     return prompt
 
 
@@ -1040,23 +1108,17 @@ def main():
                     logging.info("📋 1단계: 코드 생성 프롬프트 생성 중...")
                     code_prompt = generate_code_prompt(user_query, df_preview, df_types)
                     logging.info(f"📏 프롬프트 길이: {len(code_prompt)} 문자")
-                    print("생성된 코드 프롬프트")
-                    print(code_prompt)
                     
                     # 2단계: LLM 호출로 코드 생성
                     logging.info("🤖 2단계: LLM 호출로 코드 생성 중...")
                     logging.info(f"📡 API 호출 준비 중... (서비스: {service}, 모델: {model})")
                     generated_response = llm_call(code_prompt)
                     logging.info(f"✅ LLM 응답 수신 완료 (길이: {len(generated_response)} 문자)")
-                    print("생성된 코드")
-                    print(generated_response)   
                     
                     # 3단계: 코드 추출
                     logging.info("🔍 3단계: 생성된 응답에서 코드 추출 중...")
                     generated_code = extract_code_from_response(generated_response)
                     logging.info(f"📝 추출된 코드 길이: {len(generated_code) if generated_code else 0} 문자")
-                    print("생성된 코드 추출")
-                    print(generated_code)
                     
                     # 4단계: 코드 실행
                     logging.info("⚙️ 4단계: 생성된 코드 실행 중...")
