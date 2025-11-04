@@ -185,6 +185,11 @@ def llm_call_ollama(prompt: str, model: str = None) -> str:
     """
     Ollama의 REST API를 사용하여 지정된 모델을 호출합니다.
     """
+    logging.info("=" * 60)
+    logging.info("🦙 Ollama 함수 호출 시작")
+    logging.info("=" * 60)
+    logging.info(f"📝 요청 모델: {model if model else '자동 선택'}")
+    logging.info(f"📏 프롬프트 길이: {len(prompt)} 문자")
 
     def remove_think_tags(text: str) -> str:
         """
@@ -208,37 +213,55 @@ def llm_call_ollama(prompt: str, model: str = None) -> str:
         return cleaned_text.strip()
 
     # 1. 서버 연결 확인
+    logging.info("🔍 1단계: Ollama 서버 연결 확인 중...")
     if not check_ollama_connection():
+        logging.error("❌ Ollama 서버 연결 실패")
+        logging.error("💡 해결 방법: 터미널에서 'ollama serve' 실행")
         raise Exception("Ollama 서버에 연결할 수 없습니다. 'ollama serve' 명령으로 서버를 시작해주세요.")
+    logging.info("✅ Ollama 서버 연결 성공 (http://localhost:11434)")
     
     # 2. 사용 가능한 모델 확인
+    logging.info("🔍 2단계: 사용 가능한 모델 확인 중...")
     available_models = get_available_ollama_models()
-    logging.info(f"🦙 사용 가능한 Ollama 모델: {available_models}")
+    logging.info(f"🦙 사용 가능한 Ollama 모델 목록:")
+    for idx, m in enumerate(available_models, 1):
+        logging.info(f"   {idx}. {m}")
     
     if not available_models:
+        logging.error("❌ 설치된 Ollama 모델 없음")
+        logging.error("💡 해결 방법:")
+        logging.error("   1. ollama pull qwen2.5:3b")
+        logging.error("   2. ollama pull llama3.2:3b")
+        logging.error("   3. ollama pull gpt-oss:latest")
         raise Exception("설치된 Ollama 모델이 없습니다. 'ollama pull qwen2.5:3b' 명령으로 모델을 다운로드하세요.")
     
     # 3. 모델 선택
+    logging.info("🔍 3단계: 모델 선택 중...")
     if model and model in available_models:
         selected_model = model
-        logging.info(f"🎯 사용자 지정 모델 사용: {selected_model}")
+        logging.info(f"✅ 사용자 지정 모델 사용: {selected_model}")
     else:
+        if model and model not in available_models:
+            logging.warning(f"⚠️ 요청한 모델 '{model}'을(를) 찾을 수 없음")
+            logging.warning(f"💡 사용 가능한 모델: {', '.join(available_models)}")
+        
         # 지정된 모델이 없거나 사용 불가능한 경우 우선순위에 따라 선택
-        preferred_models = ["qwen2.5:3b", "qwen2.5:7b", "qwen2.5:1.5b", "qwen3:latest", "llama3.2:3b", "llama3.1:latest", "llama3.1:8b"]
+        preferred_models = ["qwen2.5:3b", "qwen2.5:7b", "qwen2.5:1.5b", "qwen3:latest", "llama3.2:3b", "llama3.1:latest", "llama3.1:8b", "gpt-oss:latest"]
         selected_model = None
         
         for preferred_model in preferred_models:
             if preferred_model in available_models:
                 selected_model = preferred_model
+                logging.info(f"✅ 우선순위 모델 선택: {selected_model}")
                 break
         
         if not selected_model:
             # 우선순위 모델이 없으면 첫 번째 사용 가능한 모델 사용
             selected_model = available_models[0]
-        
-        logging.info(f"🦙 자동 선택된 Ollama 모델: {selected_model}")
+            logging.info(f"⚠️ 우선순위 모델 없음 - 첫 번째 모델 사용: {selected_model}")
     
     # 4. API 호출
+    logging.info("🔍 4단계: Ollama API 호출 준비...")
     url = "http://localhost:11434/api/generate"
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -252,35 +275,76 @@ def llm_call_ollama(prompt: str, model: str = None) -> str:
         }
     }
     
+    logging.info(f"📡 요청 URL: {url}")
+    logging.info(f"🤖 최종 선택 모델: {selected_model}")
+    logging.info(f"🎛️ 파라미터: temperature=0.7, top_p=0.9")
+    
     try:
-        logging.info(f"🦙 Ollama API 호출 시작...")
+        logging.info(f"⏳ Ollama API 호출 시작 (timeout: 120초)...")
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=120)
+        
+        logging.info(f"📨 HTTP 응답 수신 - 상태 코드: {response.status_code}")
         
         if response.status_code != 200:
             error_detail = response.text if response.text else "알 수 없는 오류"
+            logging.error(f"❌ HTTP 오류 {response.status_code}")
+            logging.error(f"📋 오류 상세: {error_detail}")
             raise Exception(f"Ollama API 호출 실패 (HTTP {response.status_code}): {error_detail}")
 
         result = response.json()
+        logging.info(f"📦 JSON 응답 파싱 성공")
+        logging.info(f"📋 응답 키: {list(result.keys())}")
         
         if "response" not in result:
+            logging.error(f"❌ 응답 형식 오류 - 'response' 키 없음")
+            logging.error(f"📋 받은 키: {list(result.keys())}")
+            logging.error(f"📋 전체 응답: {str(result)[:500]}")
             raise Exception(f"Ollama 응답 형식 오류: {result}")
         
         response_text = result["response"]
-        logging.info(f"✅ Ollama 호출 성공 - 응답 길이: {len(response_text)} 문자")
-        print(f"{selected_model} 완료")
+        logging.info(f"✅ Ollama 호출 성공!")
+        logging.info(f"📏 응답 길이: {len(response_text)} 문자")
+        logging.info(f"📝 응답 샘플 (처음 200자):")
+        logging.info(f"   {response_text[:200]}...")
+        print(f"🦙 {selected_model} 응답 완료")
         
         # <think> 태그 제거
         cleaned_response = remove_think_tags(response_text)
-        logging.info(f"🧹 <think> 태그 제거 후 길이: {len(cleaned_response)} 문자")
+        if len(cleaned_response) != len(response_text):
+            logging.info(f"🧹 <think> 태그 제거 완료")
+            logging.info(f"   변경 전: {len(response_text)} 문자")
+            logging.info(f"   변경 후: {len(cleaned_response)} 문자")
         
+        logging.info("=" * 60)
         return cleaned_response
         
     except requests.exceptions.Timeout:
+        logging.error("❌ Ollama 응답 시간 초과 (120초)")
+        logging.error("💡 가능한 원인:")
+        logging.error("   1. 모델이 너무 크거나 복잡한 요청")
+        logging.error("   2. 서버 과부하")
+        logging.error("   3. 컴퓨터 리소스 부족")
+        logging.error("=" * 60)
         raise Exception("Ollama 응답 시간 초과. 모델이 너무 크거나 서버가 과부하 상태일 수 있습니다.")
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.ConnectionError as e:
+        logging.error("❌ Ollama 서버 연결 끊김")
+        logging.error(f"📋 상세 오류: {str(e)}")
+        logging.error("💡 해결 방법: 터미널에서 'ollama serve' 실행")
+        logging.error("=" * 60)
         raise Exception("Ollama 서버 연결 끊김. 서버가 실행 중인지 확인하세요.")
+    except json.JSONDecodeError as e:
+        logging.error("❌ JSON 파싱 오류")
+        logging.error(f"📋 상세 오류: {str(e)}")
+        logging.error(f"📋 받은 응답 (처음 500자): {response.text[:500]}")
+        logging.error("=" * 60)
+        raise Exception(f"Ollama 응답 JSON 파싱 실패: {str(e)}")
     except Exception as e:
-        logging.error(f"❌ Ollama 호출 실패: {str(e)}")
+        logging.error("❌ 예상치 못한 오류")
+        logging.error(f"📋 오류 유형: {type(e).__name__}")
+        logging.error(f"📋 오류 메시지: {str(e)}")
+        logging.error(f"📋 스택 트레이스:")
+        logging.error(traceback.format_exc())
+        logging.error("=" * 60)
         raise e
 
 #######################  파일 처리 유틸리티 ########################
@@ -363,7 +427,13 @@ def extract_code_from_response(response: str) -> str:
     여러 패턴을 시도하여 가장 적합한 코드를 찾습니다.
     """
     
-    logging.info(f"🔍 코드 추출 시작 - 응답 길이: {len(response)} 문자")
+    logging.info("=" * 60)
+    logging.info("🔍 코드 추출 단계 시작")
+    logging.info("=" * 60)
+    logging.info(f"📏 응답 길이: {len(response)} 문자")
+    logging.info(f"📝 응답 샘플 (처음 300자):")
+    logging.info(f"   {response[:300]}...")
+    logging.info("-" * 60)
     
     # 1. <result> 태그 우선 추출
     result_patterns = [
@@ -440,25 +510,74 @@ def extract_code_from_response(response: str) -> str:
     if potential_code_lines:
         fallback_code = '\n'.join(potential_code_lines)
         logging.warning(f"⚠️ 휴리스틱으로 코드 추출 시도 - 길이: {len(fallback_code)} 문자")
+        logging.info("=" * 60)
         return fallback_code
 
-    logging.error("❌ 코드 추출 실패 - 응답에서 유효한 Python 코드를 찾을 수 없습니다")
+    # 모든 시도 실패
+    logging.error("=" * 60)
+    logging.error("❌ 코드 추출 실패 - 모든 패턴 매칭 실패")
+    logging.error("=" * 60)
+    logging.error("📋 LLM 응답 전체:")
+    for i, line in enumerate(response.split('\n')[:50], 1):  # 처음 50줄만
+        logging.error(f"   {i:3d}| {line}")
+    if len(response.split('\n')) > 50:
+        logging.error(f"   ... (총 {len(response.split('\n'))} 줄)")
+    logging.error("-" * 60)
+    logging.error("💡 가능한 원인:")
+    logging.error("   1. LLM이 <result> 태그를 사용하지 않음")
+    logging.error("   2. 코드가 마크다운 형식이 아님")
+    logging.error("   3. 'final_df' 변수가 없음")
+    logging.error("   4. LLM이 설명만 하고 코드를 생성하지 않음")
+    logging.error("=" * 60)
     return ""
 
 def execute_generated_code(code: str, df: pd.DataFrame, max_retries: int = 3):
+    logging.info("=" * 60)
+    logging.info("⚙️ 코드 실행 단계 시작")
+    logging.info("=" * 60)
+    logging.info(f"📏 코드 길이: {len(code)} 문자")
+    logging.info(f"🔁 최대 재시도 횟수: {max_retries}")
+    logging.info(f"📊 입력 데이터: {len(df)}행 × {len(df.columns)}열")
+    logging.info("-" * 60)
+    logging.info("📝 실행할 코드:")
+    for i, line in enumerate(code.split('\n'), 1):
+        logging.info(f"   {i:3d}| {line}")
+    logging.info("-" * 60)
+    
     current_code = code
     error_history = []
     
     for attempt in range(max_retries):
+        logging.info(f"🔄 시도 {attempt + 1}/{max_retries}")
         try:
             local_vars = {"df": df, "final_df": None}
+            logging.info("⏳ exec() 실행 중...")
             exec(current_code, {}, local_vars)
-            return local_vars.get("final_df", None)
+            
+            final_df = local_vars.get("final_df", None)
+            if final_df is not None:
+                logging.info("✅ 코드 실행 성공!")
+                logging.info(f"📊 결과 데이터: {len(final_df)}행 × {len(final_df.columns)}열")
+                logging.info(f"📋 결과 컬럼: {list(final_df.columns)}")
+                logging.info("=" * 60)
+            else:
+                logging.warning("⚠️ 코드는 실행되었으나 final_df가 None입니다")
+                logging.info("=" * 60)
+            return final_df
         except Exception as e:
             error_message = str(e)
             error_history.append(f"Attempt {attempt + 1} failed: {error_message}")
             
+            logging.error(f"❌ 코드 실행 실패 (시도 {attempt + 1}/{max_retries})")
+            logging.error(f"📋 오류 유형: {type(e).__name__}")
+            logging.error(f"📋 오류 메시지: {error_message}")
+            logging.error(f"📋 스택 트레이스:")
+            for line in traceback.format_exc().split('\n'):
+                if line.strip():
+                    logging.error(f"   {line}")
+            
             if attempt < max_retries - 1:  # 마지막 시도에는 새로운 코드 생성하지 않음
+                logging.info(f"🔄 재시도 {attempt + 2}/{max_retries} 준비 중...")
                 # 코드 수정을 위한 새로운 프롬프트 생성
                 error_prompt = f"""
                 다음 코드에서 오류가 발생했습니다:
