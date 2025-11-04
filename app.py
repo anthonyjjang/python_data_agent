@@ -280,8 +280,8 @@ def llm_call_ollama(prompt: str, model: str = None) -> str:
     logging.info(f"🎛️ 파라미터: temperature=0.7, top_p=0.9")
     
     try:
-        logging.info(f"⏳ Ollama API 호출 시작 (timeout: 120초)...")
-        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=120)
+        logging.info(f"⏳ Ollama API 호출 시작 (timeout: 180초)...")
+        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=180)
         
         logging.info(f"📨 HTTP 응답 수신 - 상태 코드: {response.status_code}")
         
@@ -319,13 +319,17 @@ def llm_call_ollama(prompt: str, model: str = None) -> str:
         return cleaned_response
         
     except requests.exceptions.Timeout:
-        logging.error("❌ Ollama 응답 시간 초과 (120초)")
+        logging.error("❌ Ollama 응답 시간 초과 (180초)")
         logging.error("💡 가능한 원인:")
-        logging.error("   1. 모델이 너무 크거나 복잡한 요청")
+        logging.error("   1. 모델이 너무 큼 (30B 모델은 매우 느림)")
         logging.error("   2. 서버 과부하")
         logging.error("   3. 컴퓨터 리소스 부족")
+        logging.error("💡 해결 방법:")
+        logging.error("   1. 더 작은 모델 사용 (qwen3:1.7b, qwen3:latest)")
+        logging.error("   2. 질문을 더 간단하게 작성")
+        logging.error("   3. Ollama 재시작: pkill ollama && ollama serve")
         logging.error("=" * 60)
-        raise Exception("Ollama 응답 시간 초과. 모델이 너무 크거나 서버가 과부하 상태일 수 있습니다.")
+        raise Exception(f"Ollama 응답 시간 초과 (180초). 모델 '{selected_model}'이(가) 너무 크거나 서버가 과부하 상태입니다. 더 작은 모델(qwen3:1.7b)을 사용해보세요.")
     except requests.exceptions.ConnectionError as e:
         logging.error("❌ Ollama 서버 연결 끊김")
         logging.error(f"📋 상세 오류: {str(e)}")
@@ -809,18 +813,46 @@ def main():
             available_models = get_available_ollama_models()
             if available_models:
                 st.write("**사용 가능한 Ollama 모델:**")
+                
+                # 빠른 모델을 기본값으로 설정
+                fast_models = ["qwen3:1.7b", "qwen3:latest", "qwen2.5:3b", "llama3.2:3b"]
+                default_index = 0
+                for i, model in enumerate(available_models):
+                    if model in fast_models:
+                        default_index = i
+                        break
+                
                 selected_model = st.selectbox(
                     "모델 선택:",
                     available_models,
-                    index=0
+                    index=default_index,
+                    help="⚡ 빠른 모델 추천: qwen3:1.7b, qwen3:latest, llama3.2:3b"
                 )
                 
                 # 모델 정보 표시
-                st.info(f"선택된 모델: {selected_model}")
+                model_size_info = {
+                    "qwen3:1.7b": "⚡⚡⚡ 매우 빠름 (2B) - 추천!",
+                    "qwen3:latest": "⚡⚡ 빠름 (8B) - 균형잡힌 선택",
+                    "qwen2.5:3b": "⚡⚡ 빠름 (3B)",
+                    "llama3.2:3b": "⚡⚡ 빠름 (3B)",
+                    "gpt-oss:latest": "⚡ 보통 (21B) - 정확하지만 느림",
+                    "qwen3:30b": "🐢 느림 (30B) - 복잡한 작업용",
+                    "qwen3-coder:30b": "🐢 느림 (30B) - 코딩 특화"
+                }
+                model_info = model_size_info.get(selected_model, "")
+                if model_info:
+                    st.success(f"선택된 모델: {selected_model}\n{model_info}")
+                else:
+                    st.info(f"선택된 모델: {selected_model}")
                 
                 # 세션 상태에 저장
                 st.session_state.llm_service = "ollama"
                 st.session_state.selected_model = selected_model
+                
+                # 큰 모델 경고
+                if "30b" in selected_model.lower() or ("gpt-oss" in selected_model.lower()):
+                    st.warning("⚠️ 큰 모델을 선택하셨습니다. 응답 시간이 수 분 걸릴 수 있습니다.")
+                    st.info("💡 빠른 응답을 원하시면 qwen3:1.7b 또는 qwen3:latest를 추천합니다.")
             else:
                 st.error("❌ 설치된 Ollama 모델이 없습니다.")
                 st.info("💡 다음 명령으로 모델을 다운로드하세요:")
