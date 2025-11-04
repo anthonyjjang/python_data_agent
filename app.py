@@ -56,9 +56,10 @@ log_file_path = setup_logging()
 
 #######################  llm 호출 함수 ########################
 
-def llm_call_openai(prompt: str, model: str = "gpt-4o-mini") -> str:
+def llm_call_openai(prompt: str, model: str = "gpt-3.5-turbo") -> str:
     """
     주어진 프롬프트로 OpenAI LLM을 동기적으로 호출합니다.
+    기본 모델: gpt-3.5-turbo (가장 안정적이고 경제적)
     """
     openai_api_key = os.getenv("OPENAI_API_KEY")
     
@@ -128,7 +129,7 @@ def llm_call(prompt: str) -> str:
             st.session_state.selected_model = models[0] if models else "qwen3:latest"
         elif os.getenv("OPENAI_API_KEY"):
             st.session_state.llm_service = "openai"
-            st.session_state.selected_model = "gpt-4o-mini"
+            st.session_state.selected_model = "gpt-3.5-turbo"
         else:
             raise Exception("사용 가능한 LLM 서비스가 없습니다. Ollama를 설치하거나 OpenAI API 키를 설정해주세요.")
     
