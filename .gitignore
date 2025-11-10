@@ -10,20 +10,21 @@ wheels/
 data/
 # Virtual environments
 .venv
+venv/
 # env
 .env
 app.log
-column_info.csv
-detailed_product_statistics.csv
-ENTR_BY_INS_MERGE.csv
-merged_product_statistics.csv
-product_statistics.csv
-.ipynb_checkpoints/database-checkpoint.md
-.ipynb_checkpoints/forecasting_analysis-checkpoint.ipynb
-.ipynb_checkpoints/ollama_vector_qa-checkpoint.ipynb
-.ipynb_checkpoints/product_statistics-checkpoint.ipynb
-.ipynb_checkpoints/Untitled-checkpoint.ipynb
-csv/ENTR_BY_INS.csv
-csv/ENTR_INT_INS.csv
-csv/MVNO_PRD_PLC.csv
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+
+# Output files
+output/
+
+# macOS
 .DS_Store

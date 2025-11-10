@@ -378,6 +378,114 @@ def detect_file_encoding(uploaded_file):
         logging.warning(f"⚠️ 인코딩 감지 실패: {e}")
         return None
 
+#######################  헬퍼 함수 : 정산 연월 기반 파일 로드 ########################
+
+def get_settlement_file_paths(yymm: str, base_dir: str = ".") -> dict:
+    """
+    정산 연월(YYMM)을 입력받아 해당하는 파일 경로를 반환
+    
+    Args:
+        yymm: 정산 연월 (예: "2506", "2507")
+        base_dir: 기준 디렉토리 (기본값: 현재 디렉토리)
+        
+    Returns:
+        dict: {
+            "converted": "csv/converted/2506월 통합 개통처리부.csv",
+            "stacc": "csv/202506_SS001344_ENTR_BY_STACC_PTN_INS_001.csv",
+            "converted_exists": True/False,
+            "stacc_exists": True/False
+        }
+    """
+    # YYMM에서 연도와 월 추출
+    yy = yymm[:2]
+    mm = yymm[2:4]
+    
+    # 파일 경로 생성
+    converted_path = os.path.join(base_dir, "csv", "converted", f"{yymm}월 통합 개통처리부.csv")
+    stacc_path = os.path.join(base_dir, "csv", f"20{yymm}_SS001344_ENTR_BY_STACC_PTN_INS_001.csv")
+    
+    # 파일 존재 여부 확인
+    converted_exists = os.path.exists(converted_path)
+    stacc_exists = os.path.exists(stacc_path)
+    
+    return {
+        "converted": converted_path,
+        "stacc": stacc_path,
+        "converted_exists": converted_exists,
+        "stacc_exists": stacc_exists,
+        "yymm": yymm,
+        "display_name": f"{yy}년 {mm}월"
+    }
+
+
+def load_settlement_files(yymm: str, base_dir: str = ".") -> dict:
+    """
+    정산 연월에 해당하는 파일들을 로드
+    
+    Args:
+        yymm: 정산 연월 (예: "2506", "2507")
+        base_dir: 기준 디렉토리
+        
+    Returns:
+        dict: {
+            "converted": DataFrame or None,
+            "stacc": DataFrame or None,
+            "success": True/False,
+            "message": str
+        }
+    """
+    file_paths = get_settlement_file_paths(yymm, base_dir)
+    result = {
+        "converted": None,
+        "stacc": None,
+        "success": False,
+        "message": "",
+        "file_paths": file_paths
+    }
+    
+    loaded_files = []
+    errors = []
+    
+    # converted 파일 로드
+    if file_paths["converted_exists"]:
+        try:
+            logging.info(f"📂 통합 개통처리부 파일 로드 중: {file_paths['converted']}")
+            df_converted = pd.read_csv(file_paths["converted"], encoding='utf-8')
+            result["converted"] = df_converted
+            loaded_files.append(f"통합 개통처리부 ({len(df_converted):,}행)")
+            logging.info(f"✅ 통합 개통처리부 로드 성공: {len(df_converted):,}행 × {len(df_converted.columns)}열")
+        except Exception as e:
+            error_msg = f"통합 개통처리부 로드 실패: {str(e)}"
+            errors.append(error_msg)
+            logging.error(f"❌ {error_msg}")
+    else:
+        errors.append(f"통합 개통처리부 파일이 존재하지 않습니다: {file_paths['converted']}")
+    
+    # STACC 파일 로드
+    if file_paths["stacc_exists"]:
+        try:
+            logging.info(f"📂 STACC 파일 로드 중: {file_paths['stacc']}")
+            df_stacc = pd.read_csv(file_paths["stacc"], encoding='utf-8')
+            result["stacc"] = df_stacc
+            loaded_files.append(f"STACC 데이터 ({len(df_stacc):,}행)")
+            logging.info(f"✅ STACC 파일 로드 성공: {len(df_stacc):,}행 × {len(df_stacc.columns)}열")
+        except Exception as e:
+            error_msg = f"STACC 파일 로드 실패: {str(e)}"
+            errors.append(error_msg)
+            logging.error(f"❌ {error_msg}")
+    else:
+        errors.append(f"STACC 파일이 존재하지 않습니다: {file_paths['stacc']}")
+    
+    # 결과 정리
+    if loaded_files:
+        result["success"] = True
+        result["message"] = f"✅ {file_paths['display_name']} 데이터 로드 완료: " + ", ".join(loaded_files)
+    else:
+        result["message"] = "❌ 파일을 찾을 수 없습니다:\n" + "\n".join(errors)
+    
+    return result
+
+
 #######################  헬퍼 함수 : DataFrame을 텍스트 테이블로 변환 ########################
 
 def df_to_text_table(df_preview: list, df_types: dict) -> tuple:
